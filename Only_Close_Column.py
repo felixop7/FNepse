@@ -1,0 +1,155 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from datetime import datetime
+import time
+import pandas as pd
+import numpy as np
+from lxml import html
+import os
+
+
+from datetime import datetime, timedelta
+
+# from final_project import options
+
+# from final_project import df
+
+# these are the indices which we provide in dropdown
+
+chrome_service = Service("/path/to/chromedriver")
+driver = webdriver.Chrome(service=chrome_service)
+
+# navigate to the webpage
+driver.get("https://nepsealpha.com/nepse-data")
+
+# wait for the relevant elements to load
+wait = WebDriverWait(driver, 200)
+wait.until(
+    EC.presence_of_element_located(
+        (
+            By.XPATH,
+            '//*[@id="vue_app_content"]/div[3]/div/div/div/form/div/div/div[2]/input',
+        )
+    )
+)
+
+# calculate start and end dates
+
+end_date = datetime.today().strftime("%m/%d/%Y")
+start_date = (datetime.today() - timedelta(days=3650)).strftime("%m/%d/%Y")
+
+# fill in the start date
+
+start_date_input = driver.find_element(
+    By.XPATH, '//*[@id="vue_app_content"]/div[3]/div/div/div/form/div/div/div[2]/input'
+)
+start_date_input.clear()
+start_date_input.send_keys(start_date)
+
+# fill in the end date
+
+end_date_input = driver.find_element(
+    By.XPATH, '//*[@id="vue_app_content"]/div[3]/div/div/div/form/div/div/div[3]/input'
+)
+end_date_input.clear()
+end_date_input.send_keys(end_date)
+
+# select the symbol or indices
+symbol_name = "NABIL (Nabil Bank Limited)"
+
+# click on the symbol or indices dropdown
+symbol_name_dropdown = driver.find_element(
+    By.XPATH,
+    '//*[@id="vue_app_content"]/div[3]/div/div/div/form/div/div/div[4]/span/span[1]/span',
+)
+symbol_name_dropdown.click()
+
+# enter the search text and wait for results to load
+search_box = driver.find_element(By.XPATH, "/html/body/span/span/span[1]/input")
+search_box.send_keys(symbol_name)
+wait.until(
+    EC.visibility_of_element_located(
+        (
+            By.CSS_SELECTOR,
+            ".select2-results__option.select2-results__option--highlighted",
+        )
+    )
+)
+
+# select the searched item from the dropdown
+search_results = driver.find_elements(
+    By.CSS_SELECTOR, ".select2-results__option.select2-results__option--highlighted"
+)
+for result in search_results:
+    if symbol_name in result.text:
+        result.click()
+        break
+
+
+# click on the submit button to get the data
+filter_button = driver.find_element(
+    By.XPATH, '//*[@id="vue_app_content"]/div[3]/div/div/div/form/div/div/div[5]/button'
+)
+filter_button.click()
+
+
+# wait for the table to load
+wait.until(
+    EC.presence_of_element_located(
+        (By.XPATH, '//*[@id="result-table_wrapper"]/div[1]/button[4]')
+    )
+)
+
+# import the table as pandas dataframe
+
+close_array = np.zeros(500, dtype=float)
+
+# scrape the first 100 entries on the first page
+for i in range(1, 101):
+    index = i
+    table_cell = driver.find_element(
+        By.XPATH, '//*[@id="result-table"]/tbody/tr[{}]/td[6]'.format(index)
+    )
+    close_value = float(table_cell.text)
+    close_array[i - 1] = close_value
+
+
+# iterate through the remaining pages and scrape the close values
+for j in range(1, 5):
+    # click the "Next" button
+    next_button = driver.find_element(By.XPATH, '//a[@class="paginate_button next"]')
+    next_button.click()
+    time.sleep(5)  # wait for the page to load
+
+    # scrape the next 100 entries on the current page
+    for i in range(1, 101):
+        index = i
+        table_cell = driver.find_element(
+            By.XPATH, '//*[@id="result-table"]/tbody/tr[{}]/td[6]'.format(index)
+        )
+        close_value = float(table_cell.text)
+        close_array[i - 1 + j * 100] = close_value
+# close the web driver
+# time.sleep(10)
+
+
+close_array = close_array[::-1]
+driver.quit()
+
+# close_array
+
+# close the web driver
+df = pd.DataFrame(close_array)
+
+# Save the data to a CSV file
+filename = "scraped_data.csv"
+df.to_csv(filename, index=False)
+
+# Get the absolute path of the saved file
+abs_path = os.path.abspath(filename)
+
+# Print the absolute path of the saved file
+print("Data saved to:", abs_path)
